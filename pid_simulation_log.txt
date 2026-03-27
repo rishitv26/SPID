@@ -1,21 +1,21 @@
 Running Standard PID simulation...
 
 ===== Standard PID Performance =====
-steady_state_error: 0.0316
-overshoot_%: 25.1395
-rise_time_s: 1.9700
-settling_time_s: 7.3200
-Final Position: 99.9684
-Final Velocity: 0.0477
+steady_state_error: 0.1331
+overshoot_%: 57.8590
+rise_time_s: 2.2200
+settling_time_s: 39.9900
+Final Position: 0.8669
+Final Velocity: -0.0201
 
 
 Running SmartPID simulation...
 
 ===== SmartPID Performance =====
-steady_state_error: 8.2241
-overshoot_%: 69.8582
-rise_time_s: 1.9200
-settling_time_s: 39.9900
-Final Position: 91.7759
-Final Velocity: 7.1712
-Final Gains - kP: 595420329194.8767, kI: 6402138342.3596, kD: -498219294.2925
+steady_state_error: 0.0476
+overshoot_%: 0.0000
+rise_time_s: 22.6000
+settling_time_s: nan
+Final Position: 0.9524
+Final Velocity: -0.0036
+Final Gains - kP: 1.1476, kI: 1.0806, kD: 1.0028

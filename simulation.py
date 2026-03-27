@@ -212,7 +212,7 @@ def analyze_performance(t, x, setpoint=10.0):
 # ==========================================
 if __name__ == "__main__":
     # Setpoint
-    setpoint = 100.0
+    setpoint = 1.0
     sim_time = 40.0
     dt = 0.01
     
@@ -228,9 +228,9 @@ if __name__ == "__main__":
     sensor1 = NoisySensor(noise_std=0.05, bias=0.0, delay_samples=2)
     
     pid = PID(
-        kp=15.0,
-        ki=5.0,
-        kd=8.0,
+        kp=1.1852,  #15.0,
+        ki=1.0964,  #5.0
+        kd=1.0037,  #8.0
         output_limits=(-50, 50)
     )
     
