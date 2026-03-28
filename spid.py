@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from scipy.stats import norm
-from math import *
+from math import isnan, isinf
 
 # ==========================================
 # Abstract Base Class For Controllers
