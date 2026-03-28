@@ -228,9 +228,9 @@ if __name__ == "__main__":
     sensor1 = NoisySensor(noise_std=0.05, bias=0.0, delay_samples=2)
     
     pid = PID(
-        kp=1.1852,  #15.0,
-        ki=1.0964,  #5.0
-        kd=1.0037,  #8.0
+        kp=15.0,
+        ki=5.0,
+        kd=8.0,
         output_limits=(-50, 50)
     )
     
@@ -258,15 +258,11 @@ if __name__ == "__main__":
     
     sensor2 = NoisySensor(noise_std=0.05, bias=0.0, delay_samples=2)
     
-    # Function to get actual plant velocity (what we want to track)
-    def get_plant_velocity():
-        return plant2.velocity
     
     spid = SmartPID(
-        actual_output_func=get_plant_velocity,
         correction_constant=0.002,
         windup=1.0,
-        learning_constant=0.01,
+        learning_constant=0.00005,
         max_value=50.0
     )
     

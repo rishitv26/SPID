@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from scipy.stats import norm
+from math import *
 
 # ==========================================
 # Abstract Base Class For Controllers
@@ -56,7 +57,7 @@ class PID(Controller):
 # SmartPID Controller
 # ==========================================
 class SmartPID(Controller):
-    def __init__(self, actual_output_func, correction_constant=1.0, windup=10.0,
+    def __init__(self, correction_constant=1.0, windup=0.2,
                  learning_constant=0.001, max_value=127.0):
         """
         SmartPID - Self-tuning PID controller
@@ -64,7 +65,7 @@ class SmartPID(Controller):
         Args:
             actual_output_func: Function that returns the actual control output applied to system
             correction_constant: Affects shape of fitting curve (default: 1.0)
-            windup: Integral max/min value (default: 10.0)
+            windup: Integral max/min value (default: 0.2)
             learning_constant: Affects learning rate (default: 0.001)
             max_value: Maximum value control_output can be (default: 127.0)
         """
@@ -78,24 +79,18 @@ class SmartPID(Controller):
         self.I = 0.0
         self.D = 0.0
         self.prev_val = 0.0
-        self.alpha = 0.0
         
         # SPID parameters
         self.correction_constant = abs(correction_constant)
         self.windup = abs(windup)
         self.learning_constant = abs(learning_constant)
-        self.max_value = abs(max_value)
-        self.maximum_error = -np.inf
-        self.minimum_error = np.inf
         self.CKp = 0.0
         self.CKi = 0.0
         self.CKd = 0.0
-        self.batch = {}
-        self.N = 5
-        self.skip_train = False
+        self.largest_measured_error = -np.inf
+        self.max_value = abs(max_value)
         
         # Actual output function
-        self.actual_output_func = actual_output_func
         self.control_output = 0.0
         
         # History tracking
@@ -124,18 +119,19 @@ class SmartPID(Controller):
         
         Args:
             error: The error from target
-            dt: Time step (not used in C++ version)
             
         Returns:
             Control output value
         """
-        self._update_components(error)
-        self._update_constants(error)
+        # Normalize error from -1 to 1:
+        if error > self.largest_measured_error:
+            self.largest_measured_error = error
         
-        growth = 0.001
-        self.alpha += growth if self.alpha <= 1.0 else 0.0
-        if abs(error - self.prev_val) < 0.1:
-            self.alpha += growth + 2*error
+        error /= self.largest_measured_error
+        
+        # SPID Magic
+        self._update_components(error, dt)
+        self._update_constants(error)
         
         # Track values for plotting
         self.history['P'].append(self.P)
@@ -146,80 +142,57 @@ class SmartPID(Controller):
         self.history['kI'].append(self.kI)
         self.history['kD'].append(self.kD)
         
-        return (self.kP * self.P + self.kI * self.I + self.kD * self.D)
+        # Return output
+        return self._get_control_output() * self.max_value
 
-    def _update_components(self, e):
+    def _update_components(self, e, dt):
         """Update the proportion, integral, and derivative components"""
-        if e > self.maximum_error:
-            self.maximum_error = e
-            self.skip_train = True
-        if abs(e) < self.minimum_error:
-            self.minimum_error = e
-        
         # Proportional
         self.P = e
         
-        # Derivative (no dt scaling in C++ version)
-        self.D = e - self.prev_val
+        self.D = (e - self.prev_val) / dt
         self.prev_val = e
         
         # Integral with windup protection
         if abs(e) < self.windup:
-            self.I += e
+            self.I += e * dt
         
         if abs(self.I) >= self.windup:
             self.I = 0.0
 
     def _update_constants(self, e):
         """Update the PID constants based on calculated components"""
-        # Track the constant value (average from batch)
-        avg_constant = 0.0
         
-        if not self.skip_train:
-            Y = self._get_expected(e)
-            self.batch[Y] = [self.actual_output_func(), self.P, self.I, self.D]
-            
-            if len(self.batch) >= self.N:
-                # Save past gradients:
-                CKp_old = self.CKp / self.N
-                CKi_old = self.CKi / self.N
-                CKd_old = self.CKd / self.N
-                
-                # Calculate gradients
-                self.CKp, self.CKi, self.CKd = 0.0, 0.0, 0.0
-                
-                for Ybatch, data in self.batch.items():
-                    constant = self.learning_constant * 3 * (data[0] - Ybatch)**2 * np.sign(data[0] - Ybatch)
-                    avg_constant += abs(constant)  # Track average absolute constant
-                    self.CKp += constant * data[1]
-                    self.CKi += constant * data[2]
-                    self.CKd += constant * data[3]
-                
-                avg_constant /= len(self.batch)
-                    
-                # Update constants as per gradient
-                weight = 0.5
-                self.kP -= (((1-weight)*(self.CKp / self.N) + (weight)*(CKp_old))) * self._learn_factor(self.minimum_error)
-                self.kI -= (((1-weight)*(self.CKi / self.N) + (weight)*(CKi_old))) * self._learn_factor(self.minimum_error)
-                self.kD -= (((1-weight)*(self.CKd / self.N) + (weight)*(CKd_old))) * self._learn_factor(self.minimum_error)
-                
-                self.batch.clear()
-        else:
-            self.skip_train = False
+        gamma = self.learning_constant * (self._get_control_output() - self._get_expected(e))
         
-        self.history['constant'].append(avg_constant)
+        self.CKp = gamma * self.P
+        self.CKi = gamma * self.I
+        self.CKd = gamma * self.D
+        
+        self.kP -= self.CKp
+        self.kI -= self.CKi
+        self.kD -= self.CKd
+        
+        # safety net for kP, kI, kD
+        if self.kP < 0 or isinf(self.kP) or isnan(self.kP):
+            self.kP = 0
+        if self.kI < 0 or isinf(self.kI) or isnan(self.kI):
+            self.kI = 0
+        if self.kD < 0 or isinf(self.kD) or isnan(self.kD):
+            self.kD = 0
+        
+        self.history['constant'].append(self.learning_constant)
 
     def _get_expected(self, e):
         """Get the expected value for the given error"""
         # Using tanh with cubic error
-        return self.alpha * self.max_value * np.tanh(self.correction_constant * e * e * e)
-        # return e
+        # return np.tanh(3.3 * e * e * e) # causes overfit-underfit oscillation
+        # Using exp with cubic error
+        if e >= 0:
+            return np.exp(0.7 * e * e * e) - 1.0
+        else:
+            return -np.exp(-0.7 * e * e * e) + 1.0
+        
 
-    def _learn_factor(self, x):
-        """Special sigmoid function for learning"""
-        # Make it twice as strong to stop learning near sub-0 error values
-        # return 1.0 / (1.0 + np.exp(-2 * self.correction_constant * x)) - 0.5
-        # return 1.0 / (1.0+self.correction_constant*x**2)
-        return norm.pdf(x, loc=2, scale=300.0)
-    #i messed up your code heheehehehe
-    
+    def _get_control_output(self):
+        return self.kP * self.P + self.kI * self.I + self.kD * self.D
