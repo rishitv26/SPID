@@ -89,6 +89,7 @@ class SmartPID(Controller):
         self.CKd = 0.0
         self.largest_measured_error = -np.inf
         self.max_value = abs(max_value)
+        self.alpha = 0
         
         # Actual output function
         self.control_output = 0.0
@@ -129,6 +130,8 @@ class SmartPID(Controller):
         
         error /= self.largest_measured_error
         
+        self.alpha = 1 - abs(error)
+        
         # SPID Magic
         self._update_components(error, dt)
         self._update_constants(error)
@@ -162,8 +165,10 @@ class SmartPID(Controller):
 
     def _update_constants(self, e):
         """Update the PID constants based on calculated components"""
+        # calculate learn rate:
+        learn_rate = self.learning_constant * (1.0 - abs(e))
         
-        gamma = self.learning_constant * (self._get_control_output() - self._get_expected(e))
+        gamma = learn_rate * (self._get_control_output() - self._get_expected(e))
         
         self.CKp = gamma * self.P
         self.CKi = gamma * self.I
@@ -181,7 +186,7 @@ class SmartPID(Controller):
         if self.kD < 0 or isinf(self.kD) or isnan(self.kD):
             self.kD = 0
         
-        self.history['constant'].append(self.learning_constant)
+        self.history['constant'].append(learn_rate)
 
     def _get_expected(self, e):
         """Get the expected value for the given error"""
@@ -189,9 +194,9 @@ class SmartPID(Controller):
         # return np.tanh(3.3 * e * e * e) # causes overfit-underfit oscillation
         # Using exp with cubic error
         if e >= 0:
-            return np.exp(0.7 * e * e * e) - 1.0
+            return self.alpha * (np.exp(0.7 * e * e * e) - 1.0)
         else:
-            return -np.exp(-0.7 * e * e * e) + 1.0
+            return -self.alpha * (np.exp(-0.7 * e * e * e) - 1.0)
         
 
     def _get_control_output(self):

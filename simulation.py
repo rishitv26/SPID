@@ -212,7 +212,7 @@ def analyze_performance(t, x, setpoint=10.0):
 # ==========================================
 if __name__ == "__main__":
     # Setpoint
-    setpoint = 1.0
+    setpoint = 100.0
     sim_time = 40.0
     dt = 0.01
     
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     spid = SmartPID(
         correction_constant=0.002,
         windup=1.0,
-        learning_constant=0.00005,
+        learning_constant=0.00001,
         max_value=50.0
     )
     
