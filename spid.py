@@ -89,7 +89,8 @@ class SmartPID(Controller):
         self.CKd = 0.0
         self.largest_measured_error = -np.inf
         self.max_value = abs(max_value)
-        self.alpha = 0
+        self.alpha = 1.0
+        self.max_length = 1.0
         
         # Actual output function
         self.control_output = 0.0
@@ -128,9 +129,8 @@ class SmartPID(Controller):
         if error > self.largest_measured_error:
             self.largest_measured_error = error
         
-        error /= self.largest_measured_error
-        
-        self.alpha = 1 - abs(error)
+        self.normalized_error = error / self.largest_measured_error
+        self.alpha = 1 - abs(self.normalized_error)
         
         # SPID Magic
         self._update_components(error, dt)
@@ -146,15 +146,16 @@ class SmartPID(Controller):
         self.history['kD'].append(self.kD)
         
         # Return output
-        return self._get_control_output() * self.max_value
+        return self._get_control_output() #* self.max_value
 
     def _update_components(self, e, dt):
         """Update the proportion, integral, and derivative components"""
         # Proportional
         self.P = e
         
-        self.D = (e - self.prev_val) / dt
-        self.prev_val = e
+        if abs(e) < 1:
+            self.D = (e - self.prev_val) / dt
+            self.prev_val = e
         
         # Integral with windup protection
         if abs(e) < self.windup:
@@ -166,37 +167,39 @@ class SmartPID(Controller):
     def _update_constants(self, e):
         """Update the PID constants based on calculated components"""
         # calculate learn rate:
-        learn_rate = self.learning_constant * (1.0 - abs(e))
+        learn_rate = self.learning_constant * self.alpha
         
-        gamma = learn_rate * (self._get_control_output() - self._get_expected(e))
-        
+        # put clips on difference:
+        difference = self._get_control_output() - self._get_expected(e)
+        if abs(difference) > self.max_length: difference = np.sign(difference) * self.max_length
+
+        gamma = learn_rate * difference
+            
         self.CKp = gamma * self.P
         self.CKi = gamma * self.I
         self.CKd = gamma * self.D
         
+        # clip to prevent overflow (Bottou et al.)
+        clip = 1.0
+        self.CKp = np.clip(self.CKp, -clip, clip)
+        self.CKi = np.clip(self.CKi, -clip, clip)
+        self.CKd = np.clip(self.CKd, -clip, clip)
+            
         self.kP -= self.CKp
         self.kI -= self.CKi
         self.kD -= self.CKd
-        
+            
         # safety net for kP, kI, kD
-        if self.kP < 0 or isinf(self.kP) or isnan(self.kP):
-            self.kP = 0
-        if self.kI < 0 or isinf(self.kI) or isnan(self.kI):
-            self.kI = 0
-        if self.kD < 0 or isinf(self.kD) or isnan(self.kD):
-            self.kD = 0
+        self.kP = max(0.01, self.kP)
+        self.kI = max(0.01, self.kI)
+        self.kD = max(0.01, self.kD)
         
         self.history['constant'].append(learn_rate)
 
     def _get_expected(self, e):
         """Get the expected value for the given error"""
         # Using tanh with cubic error
-        # return np.tanh(3.3 * e * e * e) # causes overfit-underfit oscillation
-        # Using exp with cubic error
-        if e >= 0:
-            return self.alpha * (np.exp(0.7 * e * e * e) - 1.0)
-        else:
-            return -self.alpha * (np.exp(-0.7 * e * e * e) - 1.0)
+        return self.alpha * self.max_value / 2 * np.tanh(0.01 * e * e * e) 
         
 
     def _get_control_output(self):
