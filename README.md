@@ -2,8 +2,6 @@
 
 SPID (Self-tuning PID) is a motion control algorithm that treats PID as a single-layer neural network and uses gradient descent to adapt its gains online during operation. It is designed to outperform generic PID in environments where system dynamics are variable or unknown ahead of time, especially in non-linear environments where PID tends to perform poorly.
 
-A pre-print documenting the design, benchmarks, and analysis is awaiting publication by May, 2026.
-
 ## Motivation
 
 Standard PID requires manual gain tuning, which is environment-specific and does not adapt at runtime. Fully AI-based controllers (e.g., reinforcement learning) are very energy consuming and thus require much more energy than what can be available in some applications. SPID tries to act as the solution in the middle by retaining the structure and interpretability of PID while using backpropagation to update P, I, and D gains simultaneuosly.
